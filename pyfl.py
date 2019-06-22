@@ -13,6 +13,30 @@ from pylab import *
 from scipy import *
 from numpy import *
 import numpy as np
+
+def plot_setup():
+	#--- Plot properties
+	prop = font_manager.FontProperties(fname='/home/steven/.fonts/Library/M/MyriadPro-LightSemiExt.otf')
+	prop = font_manager.FontProperties(fname='/home/steven/.fonts/Library/Arial/arial.ttf')
+
+	matplotlib.rcParams['axes.linewidth']       = 1
+	matplotlib.rcParams['xtick.major.size']     = 8
+	matplotlib.rcParams['xtick.major.width']    = 1
+	matplotlib.rcParams['xtick.minor.size']     = 4
+	matplotlib.rcParams['xtick.minor.width']    = 1
+	matplotlib.rcParams['ytick.major.size']     = 8
+	matplotlib.rcParams['ytick.major.width']    = 1
+	matplotlib.rcParams['ytick.minor.size']     = 4
+	matplotlib.rcParams['ytick.minor.width']    = 1
+
+	matplotlib.rcParams['xtick.major.pad']      = 10
+	matplotlib.rcParams['ytick.major.pad']      = 10
+
+	matplotlib.rcParams['mathtext.default']     = 'regular'
+
+def poly_area(x,y):
+    return 0.5*np.abs(np.dot(x,np.roll(y,1))-np.dot(y,np.roll(x,1)))
+
 def cal_volume(dx,dy,dz):
     vol = zeros((len(dx),len(dy),len(dz)))
     vx  = np.matrix(dx)
@@ -678,22 +702,35 @@ def cal_fd4o(x):
 #        fcx[i,:]=array(xc*X**-1)
     return idx,fdx
         
-def plot_block(blk, nfig = None, color = 'w', fill = False, axes = None):
+#def plot_block(blk, nfig = None, color = 'w', fill = False, axes = None):
+#    import numpy as np
+##    import matplotlib as plt
+#    if axes==None:
+#        fig = plt.figure(num = nfig)
+#        plt.axes()
+#    else:
+#        fig= axes
+#    for i in range(0,len(blk)):
+#        po = plt.Polygon(np.array(blk[i]).T, fc=color, fill = fill, axes = axes)
+#        if axes==None:
+#            plt.gca().add_patch(po)
+#        else:
+#            axes.add_patch(po)
+#    return fig
+
+def plot_block(blk, nfig = None, color = 'w', fill = False):
     import numpy as np
 #    import matplotlib as plt
-    if axes==None:
-        fig = plt.figure(num = nfig)
-        plt.axes()
+    if nfig==None:
+        fig = plt.gca()
     else:
-        fig= axes
+        fig = plt.figure(num = nfig)
+#        plt.axes()
     for i in range(0,len(blk)):
-        po = plt.Polygon(np.array(blk[i]).T, fc=color, fill = fill, axes = axes)
-        if axes==None:
-            plt.gca().add_patch(po)
-        else:
-            axes.add_patch(po)
+        po = plt.Polygon(np.array(blk[i]).T, fc=color, fill = fill, axes = None)
+        plt.gca().add_patch(po)
     return fig
-
+    
 def read_block(geopath):
     import h5py
     fsimgeo = geopath + '/SIMGEO.h5'
@@ -824,7 +861,8 @@ def plot_field(x,y,f,nfig=None,colormap='seismic',cm_range=[],\
 def plot_field_polar(r, phi, f, \
                      nfig=None,colormap='seismic',cm_range=[],\
                      lo_tight=True,lo_colorbar=True,resxy=[],\
-                     old_axes = None, lo_mesh=False):
+                     old_axes = None, lo_mesh=False,\
+                     lo_connect = False,lo_sym=False):
     """
     Plots a 2D array in polar coordinates.
 
@@ -833,16 +871,25 @@ def plot_field_polar(r, phi, f, \
     :param data: array of shape (n, m) containing the data to be plotted
     """
     if len(cm_range)==0:
-        minv=None
-        maxv=None
+            if lo_sym:
+                minv = -np.amax([abs(np.amin(f)),np.amax(f)])
+                maxv =  np.amax([abs(np.amin(f)),np.amax(f)])
+            else:
+                minv=None
+                maxv=None
     else:
         minv=cm_range[0]
         maxv=cm_range[1]
     # Generate the mesh
     if resxy!=[]:
         r,phi,f=unify_xy(r,phi,f,resxy[0],resxy[1])
+    phi
+    if lo_connect:
+        r   = append(r, 2*r[-1]-r[-2])
+        phi = append(phi, 2*phi[-1]-phi[-2])
     phi_grid, r_grid = np.meshgrid(phi, r)
-    x, y = r_grid*np.cos(phi_grid), r_grid*np.sin(phi_grid)
+    x = r_grid*np.cos(phi_grid)
+    y = r_grid*np.sin(phi_grid)
     if old_axes==None:
         if lo_colorbar:
             fig = plt.figure(num=nfig,figsize=(9,8))
@@ -855,56 +902,90 @@ def plot_field_polar(r, phi, f, \
     else:
         plt.pcolormesh(x, y, f, cmap=colormap, vmin=minv,vmax=maxv,axes=axes)
     if lo_colorbar:
-                colorbar()
+        colorbar()
     if lo_tight and old_axes==None:
         fig.tight_layout()   
     if old_axes==None:
         return fig
     else:
         return axes    
-        
-def plot_uv(x,y,u,v,th=None,resx=50,resy=50,nfig=None,colormap='seismic', \
-            lo_stream=False, arrowstyle='->', strm_den=1.5, 
-            scale=None, lotick = True, width=None):
+
+def gen_mask(nmax, xlen, zlen):
+    import random
+    ints = np.ones([xlen,zlen],np.int)
+    for n in range(nmax):
+        i=random.randrange(0,xlen)
+        k=random.randrange(0,zlen)
+        ints[i,k] = 0
+    return ints
+
+def plot_uv(x,y,u,v, nfig=None, alpha=None,ns=1,pscale=20):
     xmax=np.amax(x)
     xmin=np.amin(x)
     ymax=np.amax(y)
     ymin=np.amin(y)
     lx=xmax-xmin
     ly=ymax-ymin
+    nx=len(x)
+    ny=len(y)
+
+    xm,ym = np.meshgrid(x,y)
+    mask  = gen_mask(3000,nx,ny)
 
     if 5*lx/ly<15:
         fig = plt.figure(num=nfig,figsize=(5*lx/ly,5))
     else:
         fig = plt.figure(num=nfig,figsize=(15,15*ly/lx))
-    axes = fig.add_subplot(111)
-    if not(lotick):
-        axes.set_xticklabels([])
-        axes.set_yticklabels([])
-    axes.set_ylim([ymin,ymax])
-    axes.set_xlim([xmin,xmax])
-    if lo_stream:
-        ix,iy,iu=unify_xy(x,y,u,len(x),len(y))
-        ix,iy,iv=unify_xy(x,y,v,len(x),len(y))
-        streamplot(ix, iy, iu, iv, linewidth=0.5, color='black', density= strm_den, arrowsize=0.8,arrowstyle='->')
-    else:
-        ix,iy,iu=unify_xy(x,y,u,resx,resy)
-        ix,iy,iv=unify_xy(x,y,v,resx,resy)
-        if th==None:
-            if scale==None:
-                quiver(ix,iy,iu,iv,cmap=colormap, units='x')
-            else:
-                quiver(ix, iy, iu, iv, cmap=colormap,scale=scale, \
-                       width = width, headwidth = 2.5, headlength = 5, units='width')
-        else:
-            ix,iy,ith=unify_xy(x,y,th,resx,resy)
-            if scale==None:
-                quiver(ix,iy,iu,iv,ith, cmap=colormap, units='x')
-            else:
-                quiver(ix, iy, iu, iv, ith, cmap=colormap,scale=scale, \
-                       width = width, headwidth = 2.5, headlength = 5, units='width')
-        
+    ax = fig.add_subplot(111)
+
+    scale = max(amax(abs(u)),amax(abs(v)))*pscale
+    Vec = quiver(xm,ym,ma.masked_array(u, mask=mask),ma.masked_array(v, mask=mask), color='Black',alpha=alpha,scale=scale)#,scale=2,alpha=0.6)
+    ax.axis([xmin,xmax,ymin,ymax])
     return fig
+
+#def plot_uv(x,y,u,v,th=None,resx=50,resy=50,nfig=None,colormap='seismic', \
+#            lo_stream=False, arrowstyle='->', strm_den=1.5, 
+#            scale=None, lotick = True, width=None):
+#    xmax=np.amax(x)
+#    xmin=np.amin(x)
+#    ymax=np.amax(y)
+#    ymin=np.amin(y)
+#    lx=xmax-xmin
+#    ly=ymax-ymin
+#
+#    if 5*lx/ly<15:
+#        fig = plt.figure(num=nfig,figsize=(5*lx/ly,5))
+#    else:
+#        fig = plt.figure(num=nfig,figsize=(15,15*ly/lx))
+#    axes = fig.add_subplot(111)
+#    if not(lotick):
+#        axes.set_xticklabels([])
+#        axes.set_yticklabels([])
+#    axes.set_ylim([ymin,ymax])
+#    axes.set_xlim([xmin,xmax])
+#    if lo_stream:
+#        ix,iy,iu=unify_xy(x,y,u,len(x),len(y))
+#        ix,iy,iv=unify_xy(x,y,v,len(x),len(y))
+#        streamplot(ix, iy, iu, iv, linewidth=0.5, color='black', density= strm_den, arrowstyle='->')
+#    else:
+#        ix,iy,iu=unify_xy(x,y,u,resx,resy)
+#        ix,iy,iv=unify_xy(x,y,v,resx,resy)
+#        if th==None:
+#            if scale==None:
+#                quiver(ix,iy,iu,iv,cmap=colormap, units='x')
+#            else:
+#                quiver(ix, iy, iu, iv, cmap=colormap,scale=scale, \
+#                       width = width, headwidth = 2.5, headlength = 5, units='width')
+#        else:
+#            ix,iy,ith=unify_xy(x,y,th,resx,resy)
+#            if scale==None:
+#                quiver(ix,iy,iu,iv,ith, cmap=colormap, units='x')
+#            else:
+#                quiver(ix, iy, iu, iv, ith, cmap=colormap,scale=scale, \
+#                       width = width, headwidth = 1.0*scale, headlength = 10*scale, units='x')
+#        
+#    return fig
+    
 
 def plot_line(f, axis, colors='k', linestyles='dashed'):
     ax = plt.gca()
@@ -933,7 +1014,7 @@ def unify_xy(x,y,p,nix,niy,minx=[],maxx=[],miny=[],maxy=[]):
     iy=linspace(miny,maxy,niy)
     
     if shape(p)[1]==lenx and shape(p)[0]==leny:
-        f  = interp2d(x,y,p)
+        f  = interp2d(x,y,p,bounds_error=True,kind='cubic')
         ip = f(ix,iy)
 
         #ip=zeros((nix,niy))
@@ -946,7 +1027,7 @@ def unify_xy(x,y,p,nix,niy,minx=[],maxx=[],miny=[],maxy=[]):
         #    ip[:,i]=interp(ix,x,ir[:,i])
             
     elif shape(p)[1]==leny and shape(p)[0]==lenx:
-        f  = interp2d(y,x,p)
+        f  = interp2d(y,x,p,bounds_error=True,kind='cubic')
         ip = f(iy,ix)
         #ip=zeros((niy,nix))
         #ir=zeros((leny,nix))
@@ -1163,14 +1244,14 @@ def read_probe(filename, grpname, varname):
     return var
 
 def read_slice(filename, \
-              pressure_flg = False, \
+              lo_P = False, \
               slice_flg = 'xz', \
               grp = '/', \
-              multi_res = False, \
+              lo_multires = False, \
               lo_2d  = True, \
               lo_ibm  = False, \
               lo_time = False, \
-              cylinder = False, geopath = []):
+              lo_cylinder = False, geopath = []):
     import h5py
     file = h5py.File(filename,'r')
     if geopath != []:
@@ -1188,7 +1269,7 @@ def read_slice(filename, \
                  'U':[],   'W':[], 'V':[],\
                  'T':[],   'P':[] }
     if slice_flg == 'xz':
-        if multi_res:
+        if lo_multires:
             flowfield['Xs']  = simgeo['Xs'] 
             flowfield['Zs']  = simgeo['Zs'] 
             flowfield['dXs'] = simgeo['dXs'] 
@@ -1206,7 +1287,9 @@ def read_slice(filename, \
         flowfield['dXu']= simgeo['dXu'] 
         flowfield['dZw']= simgeo['dZw'] 
         flowfield['U']  = file[grp+'U2'] 
-        flowfield['W']  = file[grp+'W2'] 
+        flowfield['W']  = file[grp+'W2']
+        if lo_P:
+            flowfield['P'] = file[grp+'P']
         if not lo_2d:
             flowfield['V']  = file[grp+'V2']
         flowfield['T']  = file[grp+'T2'] 
@@ -1218,29 +1301,33 @@ def read_slice(filename, \
             flowfield['Time'] = file['TPROBL']
         return flowfield
     if slice_flg == 'xy':
-        if multi_res:
+        if lo_multires:
             flowfield['Xs']  = simgeo['Xs']
             flowfield['dXs'] = simgeo['dXs']
             flowfield['Xus'] = simgeo['Xus']
             flowfield['dXus']= simgeo['dXus']
-            if not(cylinder):
+            if not(lo_cylinder):
                 flowfield['Ys']  = simgeo['Ys']
                 flowfield['dYs'] = simgeo['dYs']
                 flowfield['Yvs'] = simgeo['Yvs']
                 flowfield['dYvs']= simgeo['dYvs']
             else:
                 flowfield['dYs'] = simgeo['dYs']
+                flowfield['Ys']  = arange(-2, len(simgeo['JMAS'])+2)*flowfield['dYs'].value
         flowfield['Xp'] = simgeo['Xp']
         flowfield['dXp']= simgeo['dXp']
         flowfield['Xu'] = simgeo['Xu']
         flowfield['dXu']= simgeo['dXu']
-        if not(cylinder):
+        if not(lo_cylinder):
             flowfield['Yp']  = simgeo['Yp']
             flowfield['dYp'] = simgeo['dYp']
             flowfield['Yv']  = simgeo['Yv']
             flowfield['dYv'] = simgeo['dYv']
         else:
             flowfield['dY']  = simgeo['dY']
+            flowfield['Y']  = arange(-2, len(simgeo['JMA'])+2)*flowfield['dY'].value
+        if lo_P:
+            flowfield['P'] = file[grp+'P']
         flowfield['U']  = file[grp+'U2']
         flowfield['W']  = file[grp+'W2']
         flowfield['V']  = file[grp+'V2']
@@ -1253,33 +1340,37 @@ def read_slice(filename, \
             flowfield['Time'] = file['TPROBL']
         return flowfield
     if slice_flg == 'yz':
-        if multi_res:
+        if lo_multires:
             flowfield['Zs']  = simgeo['Zs']
             flowfield['dZs'] = simgeo['dZs']
             flowfield['Zws'] = simgeo['Zws']
             flowfield['dZws']= simgeo['dZws']
-            if not(cylinder):
+            if not(lo_cylinder):
                 flowfield['Ys']  = simgeo['Ys']
                 flowfield['dYs'] = simgeo['dYs']
                 flowfield['Yvs'] = simgeo['Yvs']
                 flowfield['dYvs']= simgeo['dYvs']
             else:
                 flowfield['dYs'] = simgeo['dYs']
+                flowfield['Ys']  = arange(-2, len(simgeo['JMAS'])+2)*flowfield['dYs'].value
         flowfield['Zp'] = simgeo['Zp']
         flowfield['dZp']= simgeo['dZp']
         flowfield['Zw'] = simgeo['Zw']
         flowfield['dZw']= simgeo['dZw']
-        if not(cylinder):
+        if not(lo_cylinder):
             flowfield['Yp']  = simgeo['Yp']
             flowfield['dYp'] = simgeo['dYp']
             flowfield['Yv']  = simgeo['Yv']
             flowfield['dYv'] = simgeo['dYv']
         else:
             flowfield['dY']  = simgeo['dY']
+            flowfield['Y']  = arange(-2, len(simgeo['JMA'])+2)*flowfield['dY'].value
         flowfield['U']  = file[grp+'U2']
         flowfield['W']  = file[grp+'W2']
         flowfield['V']  = file[grp+'V2']
         flowfield['T']  = file[grp+'T2']
+        if lo_P:
+            flowfield['P'] = file[grp+'P']
         if lo_ibm:
             flowfield['VFU'] = file['VFU']
             flowfield['VFW'] = file['VFW']
@@ -1653,7 +1744,7 @@ def combine_vecs(th,u,w,v=[]):
     comb.extend(vectorize(th))
     comb.extend(vectorize(u))
     comb.extend(vectorize(w))
-    if v is not None:
+    if v!=[]:
         comb.extend(vectorize(v))
     return array(comb)
     
